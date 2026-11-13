@@ -1,5 +1,5 @@
 {
-    "name": "mozesms/sdk",
+    "name": "woomoza/mozesms-php",
     "description": "SDK oficial PHP da API MozeSMS (SMS, OTP, saldo, webhooks)",
     "type": "library",
     "license": "MIT",

@@ -9,20 +9,20 @@ Requisitos: PHP 7.4 ou superior, com as extensões `curl` e `json`.
 **Com Composer, direto do GitHub** (funciona já):
 
     composer config repositories.mozesms vcs https://github.com/WOOMOZA-LDA/mozesms-sdk-php
-    composer require mozesms/sdk:^1.0
+    composer require woomoza/mozesms-php:^1.0
 
 Ou, à mão, no `composer.json` do seu projeto:
 
 ```json
 {
     "repositories": [{ "type": "vcs", "url": "https://github.com/WOOMOZA-LDA/mozesms-sdk-php" }],
-    "require": { "mozesms/sdk": "^1.0" }
+    "require": { "woomoza/mozesms-php": "^1.0" }
 }
 ```
 
 **Com Composer, pelo Packagist** (quando o pacote estiver registado lá, sem o passo `repositories`):
 
-    composer require mozesms/sdk
+    composer require woomoza/mozesms-php
 
 **Sem Composer:**
 
