@@ -1,0 +1,250 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Linha de comandos da MozeSMS. Serve para testar a instalação e as chaves, e para envios pontuais.
+ *
+ *   php vendor/bin/mozesms help
+ *
+ * Credenciais por variáveis de ambiente (nunca na linha de comandos, que fica no histórico do terminal):
+ *   MOZESMS_KEY, MOZESMS_SECRET   (obrigatórias)
+ *   MOZESMS_SENDER_ID             (sender por omissão, senão "MozeSMS")
+ *   MOZESMS_BASE_URL              (só para testes locais)
+ */
+
+use MozeSMS\Client;
+use MozeSMS\Exception\AuthenticationException;
+use MozeSMS\Exception\ConnectionException;
+use MozeSMS\Exception\InsufficientBalanceException;
+use MozeSMS\Exception\InvalidRequestException;
+use MozeSMS\Exception\MozeSMSException;
+use MozeSMS\Exception\RateLimitException;
+use MozeSMS\Exception\ServerException;
+
+foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../autoload.php'] as $autoload) {
+    if (is_file($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+if (!class_exists(Client::class)) {
+    fwrite(STDERR, "Não encontrei o autoload do SDK. Corra 'composer install' ou 'composer require woomoza/mozesms-php'.\n");
+    exit(1);
+}
+
+const USAGE = <<<'TXT'
+MozeSMS — linha de comandos
+
+Uso:
+  mozesms balance                          Mostra o saldo (não gasta nada)
+  mozesms send <numero> <mensagem...>      Envia um SMS (GASTA saldo)
+  mozesms status <id>                      Estado de um SMS enviado
+  mozesms history [--limit=10]             Últimos SMS
+  mozesms otp <numero>                     Envia um código OTP (GASTA saldo)
+  mozesms otp-check <session_id> <codigo>  Verifica um código OTP
+  mozesms help
+
+Opções:
+  --from=SENDER   sender ID aprovado (por omissão MOZESMS_SENDER_ID ou "MozeSMS")
+  --json          mostra a resposta completa em JSON
+  --dry-run       (send) valida e mostra o que enviaria, sem enviar nada
+
+Exemplos:
+  export MOZESMS_KEY=mk_...  MOZESMS_SECRET=sk_...      (PowerShell: $env:MOZESMS_KEY = 'mk_...')
+  mozesms balance
+  mozesms send 846000000 "Olá da MozeSMS!" --from=MozeSMS
+  mozesms send +27821234567 "Hello" --dry-run
+  echo "texto vindo de outro comando" | mozesms send 846000000 -
+
+Códigos de saída: 0 sucesso, 1 erro, 2 uso incorreto.
+
+TXT;
+
+/** @return array{0:string[],1:array<string,string|true>} */
+function parseArgs(array $argv): array
+{
+    $pos = [];
+    $opts = [];
+    foreach (array_slice($argv, 1) as $a) {
+        if ($a === '--') {
+            continue;
+        }
+        if (strncmp($a, '--', 2) === 0) {
+            $kv = explode('=', substr($a, 2), 2);
+            $opts[$kv[0]] = $kv[1] ?? true;
+        } else {
+            $pos[] = $a;
+        }
+    }
+    return [$pos, $opts];
+}
+
+function out(string $s): void
+{
+    fwrite(STDOUT, $s . PHP_EOL);
+}
+
+function fail(string $s, int $code = 1): void
+{
+    fwrite(STDERR, $s . PHP_EOL);
+    exit($code);
+}
+
+function show(array $data, bool $json): void
+{
+    if ($json) {
+        out((string) json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+}
+
+[$args, $opts] = parseArgs($argv);
+$cmd = $args[0] ?? 'help';
+
+if (in_array($cmd, ['help', '--help', '-h'], true) || isset($opts['help'])) {
+    out(USAGE);
+    exit(0);
+}
+
+$key = getenv('MOZESMS_KEY');
+$secret = getenv('MOZESMS_SECRET');
+if (!$key || !$secret) {
+    fail("Defina MOZESMS_KEY e MOZESMS_SECRET (chaves do painel MozeSMS, secção API).\n" .
+        "  Linux/macOS: export MOZESMS_KEY=mk_... MOZESMS_SECRET=sk_...\n" .
+        "  PowerShell:  \$env:MOZESMS_KEY = 'mk_...'; \$env:MOZESMS_SECRET = 'sk_...'\n" .
+        '  Git Bash:    export MOZESMS_KEY=mk_... MOZESMS_SECRET=sk_...', 2);
+}
+
+$options = ['user_agent' => 'mozesms-cli/' . Client::VERSION];
+if (getenv('MOZESMS_BASE_URL')) {
+    $options['base_url'] = getenv('MOZESMS_BASE_URL');
+}
+$json = isset($opts['json']);
+$sender = is_string($opts['from'] ?? null) ? $opts['from'] : (getenv('MOZESMS_SENDER_ID') ?: 'MozeSMS');
+
+try {
+    $moze = new Client($key, $secret, $options);
+
+    switch ($cmd) {
+        case 'balance':
+            $b = $moze->account->balance();
+            if ($json) {
+                show($b, true);
+                break;
+            }
+            out(sprintf('Saldo: %s %s', $b['balance'] ?? '?', $b['currency'] ?? ''));
+            out(sprintf('Preço por SMS: %s  (~%s SMS)', $b['sms_price'] ?? '?', $b['estimated_sms'] ?? '?'));
+            if (isset($b['account']['name'])) {
+                out('Conta: ' . $b['account']['name'] . ' <' . ($b['account']['email'] ?? '') . '>');
+            }
+            break;
+
+        case 'send':
+            if (count($args) < 3) {
+                fail("Uso: mozesms send <numero> <mensagem...>   (ou '-' para ler do stdin)", 2);
+            }
+            $phone = $args[1];
+            $message = implode(' ', array_slice($args, 2));
+            if ($message === '-') {
+                $message = rtrim((string) stream_get_contents(STDIN), "\r\n");
+            }
+            if (isset($opts['dry-run'])) {
+                $moze->validator->phone($phone);        // só valida
+                $moze->validator->message($message);
+                $moze->validator->sender($sender);
+                out('[dry-run] nada foi enviado. Seria enviado:');
+                out('  para:    ' . (\MozeSMS\Phone::normalize($phone) ?? $phone));
+                out('  sender:  ' . $sender);
+                out('  texto:   ' . $message . '  (' . mb_strlen($message) . ' caracteres)');
+                break;
+            }
+            $r = $moze->sms->send($phone, $message, $sender);
+            if ($json) {
+                show($r, true);
+                break;
+            }
+            out(sprintf('%s para %s', $r['status'] ?? '?', $r['phone'] ?? $phone));
+            out('id:     ' . ($r['id'] ?? '?'));
+            out(sprintf('custo:  %s  (saldo restante: %s)', $r['cost'] ?? '?', $r['remaining_balance'] ?? '?'));
+            if (!empty($r['queued'])) {
+                out('nota:   o gateway está ocupado; a mensagem já está paga e segue em breve.');
+            }
+            out("Consultar:  mozesms status " . ($r['id'] ?? '<id>'));
+            break;
+
+        case 'status':
+            if (!isset($args[1])) {
+                fail('Uso: mozesms status <id>', 2);
+            }
+            $r = $moze->sms->status($args[1]);
+            if ($json) {
+                show($r, true);
+                break;
+            }
+            foreach (['status', 'phone', 'cost', 'segments', 'created_at', 'sent_at', 'delivered_at'] as $k) {
+                if (isset($r[$k])) {
+                    out(sprintf('%-13s %s', $k . ':', is_scalar($r[$k]) ? (string) $r[$k] : json_encode($r[$k])));
+                }
+            }
+            break;
+
+        case 'history':
+            $limit = is_string($opts['limit'] ?? null) ? (int) $opts['limit'] : 10;
+            $r = $moze->sms->history(['limit' => max(1, min(100, $limit))]);
+            if ($json) {
+                show($r, true);
+                break;
+            }
+            foreach ($r['data'] ?? [] as $m) {
+                out(sprintf('%-20s %-14s %-10s %s', $m['created_at'] ?? '', $m['phone'] ?? $m['destinatario'] ?? '', $m['status'] ?? '', mb_substr((string) ($m['message'] ?? $m['mensagem'] ?? ''), 0, 40)));
+            }
+            break;
+
+        case 'otp':
+            if (!isset($args[1])) {
+                fail('Uso: mozesms otp <numero>', 2);
+            }
+            $r = $moze->otp->send($args[1], ['sender_id' => $sender]);
+            if ($json) {
+                show($r, true);
+                break;
+            }
+            out('Código enviado para ' . ($r['phone'] ?? $args[1]));
+            out('session_id: ' . ($r['session_id'] ?? '?'));
+            out('expira em:  ' . ($r['expires_in'] ?? '?') . 's');
+            out('Verificar:  mozesms otp-check ' . ($r['session_id'] ?? '<session_id>') . ' <codigo>');
+            break;
+
+        case 'otp-check':
+            if (count($args) < 3) {
+                fail('Uso: mozesms otp-check <session_id> <codigo>', 2);
+            }
+            if ($moze->otp->check($args[1], $args[2])) {
+                out('Código correto: verificado.');
+            } else {
+                fail('Código errado.');
+            }
+            break;
+
+        default:
+            fail("Comando desconhecido: '$cmd'. Veja: mozesms help", 2);
+    }
+} catch (InvalidRequestException $e) {
+    fail('Dados inválidos (nada foi enviado nem cobrado): ' . $e->getMessage());
+} catch (AuthenticationException $e) {
+    fail('Credenciais recusadas (HTTP ' . $e->getHttpStatus() . '). Confirme MOZESMS_KEY e MOZESMS_SECRET no painel.');
+} catch (InsufficientBalanceException $e) {
+    fail('Saldo insuficiente. Recarregue no painel MozeSMS (ou com $moze->billing->topup).');
+} catch (RateLimitException $e) {
+    fail('Demasiados pedidos' . ($e->getRetryAfter() ? ': tente daqui a ' . $e->getRetryAfter() . 's' : '') . '.');
+} catch (ServerException $e) {
+    fail('Erro do servidor (HTTP ' . $e->getHttpStatus() . '): ' . $e->getMessage() . "\nSe estava a enviar, veja 'mozesms history' antes de repetir: o SMS pode já estar registado.");
+} catch (ConnectionException $e) {
+    fail($e->mayHaveReachedServer()
+        ? 'A ligação falhou a meio: veja "mozesms history" antes de repetir um envio.'
+        : 'Sem ligação à API (o pedido não chegou a sair): ' . $e->getMessage());
+} catch (MozeSMSException $e) {
+    fail('Erro: ' . $e->getMessage());
+}
+exit(0);

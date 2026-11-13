@@ -46,6 +46,36 @@ echo $moze->account->balance()['balance'], ' MZN', PHP_EOL;
 Se isto mostrar o saldo, está tudo ligado. Guarde as chaves em variáveis de ambiente (por exemplo `getenv('MOZESMS_KEY')`),
 nunca no código nem no Git.
 
+### Testar pelo terminal
+
+Depois de instalar com Composer, o pacote traz o comando `mozesms` (em `vendor/bin`). Defina as chaves e use-o, sem escrever código:
+
+```bash
+# Linux / macOS / Git Bash
+export MOZESMS_KEY=mk_...  MOZESMS_SECRET=sk_...
+# PowerShell
+$env:MOZESMS_KEY = 'mk_...'; $env:MOZESMS_SECRET = 'sk_...'
+```
+
+```bash
+php vendor/bin/mozesms balance                                   # saldo (não gasta nada)
+php vendor/bin/mozesms send 846000000 "Olá da MozeSMS!"          # envia um SMS (gasta saldo)
+php vendor/bin/mozesms send 846000000 "Olá" --from=MINHALOJA     # com um sender ID aprovado
+php vendor/bin/mozesms send +27821234567 "Hello" --dry-run       # valida e mostra, sem enviar
+php vendor/bin/mozesms status <id>                               # estado de um SMS já enviado
+php vendor/bin/mozesms history --limit=5                         # últimos SMS
+php vendor/bin/mozesms otp 846000000                             # envia um código OTP
+php vendor/bin/mozesms otp-check <session_id> 123456             # verifica o código
+php vendor/bin/mozesms help
+```
+
+Opções: `--from=SENDER` (ou `MOZESMS_SENDER_ID`), `--json` (resposta completa) e `--dry-run`. Pode ler o texto de outro comando com `-`:
+`echo "texto" | php vendor/bin/mozesms send 846000000 -`. Códigos de saída: 0 sucesso, 1 erro, 2 uso incorreto.
+As chaves vão **só** por variáveis de ambiente (não por argumentos, que ficam no histórico do terminal).
+Ordem sugerida para o primeiro teste: `balance` → `send ... --dry-run` → `send` para o seu próprio número.
+
+Sem Composer, o mesmo comando está em `bin/mozesms`: `php bin/mozesms balance`.
+
 ### Se o `composer require` não encontrar o pacote
 
 Pode acontecer logo depois de uma versão nova (o Packagist demora alguns minutos) ou com `minimum-stability` diferente de `stable`.

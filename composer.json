@@ -9,6 +9,7 @@
         "ext-curl": "*",
         "ext-json": "*"
     },
+    "bin": ["bin/mozesms"],
     "autoload": {
         "psr-4": { "MozeSMS\\": "src/" }
     },
