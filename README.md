@@ -6,33 +6,53 @@ Cliente da API MozeSMS (`https://api.mozesms.com`). Sem dependências além de `
 
 Requisitos: PHP 7.4 ou superior, com as extensões `curl` e `json`.
 
-**Com Composer, direto do GitHub** (funciona já):
+### Com Composer (recomendado)
 
-    composer config repositories.mozesms vcs https://github.com/WOOMOZA-LDA/mozesms-sdk-php
-    composer require woomoza/mozesms-php:^1.0
-
-Ou, à mão, no `composer.json` do seu projeto:
-
-```json
-{
-    "repositories": [{ "type": "vcs", "url": "https://github.com/WOOMOZA-LDA/mozesms-sdk-php" }],
-    "require": { "woomoza/mozesms-php": "^1.0" }
-}
-```
-
-**Com Composer, pelo Packagist** (quando o pacote estiver registado lá, sem o passo `repositories`):
+Na pasta do seu projeto (onde está o `composer.json`; se não existir, corra `composer init` primeiro):
 
     composer require woomoza/mozesms-php
 
-**Sem Composer:**
+O pacote está no [Packagist](https://packagist.org/packages/woomoza/mozesms-php). O Composer instala-o em `vendor/` e gera o
+autoload. Se o projeto for novo e ainda não tiver `composer.json`, `composer init` cria-o.
 
-    git clone --branch v1.0.0 https://github.com/WOOMOZA-LDA/mozesms-sdk-php.git
+No seu código, carregue o autoload do Composer uma vez (frameworks como Laravel ou Symfony já o fazem):
+
+```php
+require __DIR__ . '/vendor/autoload.php';
+```
+
+### Sem Composer
+
+Descarregue o código e carregue o `autoload.php` incluído:
+
+    git clone --branch v1.0.1 https://github.com/WOOMOZA-LDA/mozesms-sdk-php.git
 
 ```php
 require '/caminho/para/mozesms-sdk-php/autoload.php';
 ```
 
-Depois, em qualquer um dos casos, comece por `$moze = new \MozeSMS\Client('mk_...', 'sk_...');` (ver abaixo).
+### Primeiro teste
+
+Crie as chaves no painel MozeSMS (secção API) e experimente, sem gastar saldo:
+
+```php
+<?php
+require __DIR__ . '/vendor/autoload.php';
+
+$moze = new \MozeSMS\Client('mk_...', 'sk_...');   // API key e secret do painel
+echo $moze->account->balance()['balance'], ' MZN', PHP_EOL;
+```
+
+Se isto mostrar o saldo, está tudo ligado. Guarde as chaves em variáveis de ambiente (por exemplo `getenv('MOZESMS_KEY')`),
+nunca no código nem no Git.
+
+### Se o `composer require` não encontrar o pacote
+
+Pode acontecer logo depois de uma versão nova (o Packagist demora alguns minutos) ou com `minimum-stability` diferente de `stable`.
+Alternativa direta do GitHub:
+
+    composer config repositories.mozesms vcs https://github.com/WOOMOZA-LDA/mozesms-sdk-php
+    composer require woomoza/mozesms-php:^1.0
 
 ## Usar
 
