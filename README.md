@@ -4,11 +4,35 @@ Cliente da API MozeSMS (`https://api.mozesms.com`). Sem dependências além de `
 
 ## Instalar
 
-Com Composer (a partir desta pasta ou de um repositório):
+Requisitos: PHP 7.4 ou superior, com as extensões `curl` e `json`.
+
+**Com Composer, direto do GitHub** (funciona já):
+
+    composer config repositories.mozesms vcs https://github.com/WOOMOZA-LDA/mozesms-sdk-php
+    composer require mozesms/sdk:^1.0
+
+Ou, à mão, no `composer.json` do seu projeto:
+
+```json
+{
+    "repositories": [{ "type": "vcs", "url": "https://github.com/WOOMOZA-LDA/mozesms-sdk-php" }],
+    "require": { "mozesms/sdk": "^1.0" }
+}
+```
+
+**Com Composer, pelo Packagist** (quando o pacote estiver registado lá, sem o passo `repositories`):
 
     composer require mozesms/sdk
 
-Sem Composer: `require 'mozesms-sdk/php/autoload.php';`
+**Sem Composer:**
+
+    git clone --branch v1.0.0 https://github.com/WOOMOZA-LDA/mozesms-sdk-php.git
+
+```php
+require '/caminho/para/mozesms-sdk-php/autoload.php';
+```
+
+Depois, em qualquer um dos casos, comece por `$moze = new \MozeSMS\Client('mk_...', 'sk_...');` (ver abaixo).
 
 ## Usar
 
